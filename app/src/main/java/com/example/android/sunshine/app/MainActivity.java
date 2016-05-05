@@ -22,7 +22,7 @@ import android.support.v7.app.ActionBarActivity;
 import android.view.Menu;
 import android.view.MenuItem;
 
-import com.example.android.sunshine.app.sync.SunshineSyncAdapter;
+import com.example.android.sunshine.app.sync.SunshineSyncService;
 
 public class MainActivity extends ActionBarActivity implements ForecastFragment.Callback {
 
@@ -60,7 +60,7 @@ public class MainActivity extends ActionBarActivity implements ForecastFragment.
                 .findFragmentById(R.id.fragment_forecast));
         forecastFragment.setUseTodayLayout(!mTwoPane);
 
-        SunshineSyncAdapter.initializeSyncAdapter(this);
+        SunshineSyncService.ScheduleAlarm(this);
     }
 
     @Override

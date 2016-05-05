@@ -13,6 +13,10 @@
     <uses-permission
         android:name="android.permission.AUTHENTICATE_ACCOUNTS"/>
 
+    <!-- Allow scheduling alarms on device boot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -51,28 +55,24 @@
             android:exported="false"
             android:syncable="true" />
 
-        <!-- SyncAdapter's dummy authentication service -->
-        <service android:name=".sync.SunshineAuthenticatorService">
-            <intent-filter>
-                <action android:name="android.accounts.AccountAuthenticator" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accounts.AccountAuthenticator"
-                android:resource="@xml/authenticator" />
-        </service>
-
-        <!-- The SyncAdapter service -->
+        <!-- Background service for sync -->
         <service
             android:name=".sync.SunshineSyncService"
-            android:exported="true"
-            >
-            <intent-filter>
-                <action android:name="android.content.SyncAdapter" />
-            </intent-filter>
-            <meta-data
-                android:name="android.content.SyncAdapter"
-                android:resource="@xml/syncadapter" />
+            android:exported="false">
         </service>
+
+        <!-- Broadcast receiver for background sync alarms -->
+        <receiver
+            android:name=".sync.SunshineSyncService$SyncAlarmReceiver" >
+        </receiver>
+
+        <!-- Broadcast receiver for BOOT_COMPLETED event, to schedule alarms -->
+        <receiver android:name=".sync.SunshineSyncService$BootBroadcastReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
