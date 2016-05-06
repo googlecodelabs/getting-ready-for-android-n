@@ -4,6 +4,10 @@
     <style name="AppTheme" parent="@style/Theme.AppCompat.Light.DarkActionBar">
         <item name="colorPrimary">@color/sunshine_blue</item>
         <item name="colorPrimaryDark">@color/sunshine_dark_blue</item>
+
+        <!-- Drawable to use in the background while the window is resizing on Android N. -->
+        <item name="android:windowBackgroundFallback">@color/sunshine_dark_blue</item>
+        <item name="android:windowBackground">@color/sunshine_dark_blue</item>
     </style>
 
     <!-- Main activity theme. -->
