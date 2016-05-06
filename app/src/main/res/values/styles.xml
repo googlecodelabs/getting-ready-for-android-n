@@ -23,8 +23,11 @@
 
     <!-- Style for forecast listview -->
     <style name="ForecastListStyle">
-        <!-- Here it's a stub.  In screens of sufficient width, this style includes modifications
-        for two-pane layout -->
+        <item name="android:background">@color/white</item>
     </style>
 
+    <!-- Style for forecast detail -->
+    <style name="ForecastDetailStyle">
+        <item name="android:background">@color/white</item>
+    </style>
 </resources>

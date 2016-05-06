@@ -1,6 +1,7 @@
 <resources>
 
     <style name="ForecastListStyle">
+        <item name="android:background">@color/white</item>
         <item name="android:choiceMode">singleChoice</item>
     </style>
 
