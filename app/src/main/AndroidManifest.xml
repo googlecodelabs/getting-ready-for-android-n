@@ -15,7 +15,6 @@
 
     <!-- Allow scheduling alarms on device boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
@@ -57,22 +56,21 @@
             android:syncable="true" />
 
         <!-- Background service for sync -->
+        <!-- Retained for performing immediate sync during interactive use -->
         <service
             android:name=".sync.SunshineSyncService"
             android:exported="false">
         </service>
 
-        <!-- Broadcast receiver for background sync alarms -->
-        <receiver
-            android:name=".sync.SunshineSyncService$SyncAlarmReceiver" >
-        </receiver>
-
-        <!-- Broadcast receiver for BOOT_COMPLETED event, to schedule alarms -->
-        <receiver android:name=".sync.SunshineSyncService$BootBroadcastReceiver">
+        <!-- GcmJobService instance used for background sync -->
+        <service
+            android:name=".sync.SunshineJobScheduler"
+            android:exported="true"
+            android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE">
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="com.google.android.gms.gcm.ACTION_TASK_READY" />
             </intent-filter>
-        </receiver>
+        </service>
 
     </application>
 

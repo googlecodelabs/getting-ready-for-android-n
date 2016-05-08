@@ -19,13 +19,18 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.support.v7.app.ActionBarActivity;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 
+import com.example.android.sunshine.app.sync.SunshineJobScheduler;
 import com.example.android.sunshine.app.sync.SunshineSyncService;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 
 public class MainActivity extends ActionBarActivity implements ForecastFragment.Callback {
 
+    private static final String TAG = "MainActivity";
     private final String LOG_TAG = MainActivity.class.getSimpleName();
     private static final String DETAILFRAGMENT_TAG = "DFTAG";
 
@@ -56,13 +61,37 @@ public class MainActivity extends ActionBarActivity implements ForecastFragment.
             getSupportActionBar().setElevation(0f);
         }
 
-        ForecastFragment forecastFragment =  ((ForecastFragment)getSupportFragmentManager()
+        ForecastFragment forecastFragment = ((ForecastFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.fragment_forecast));
         forecastFragment.setUseTodayLayout(!mTwoPane);
 
-        SunshineSyncService.ScheduleAlarm(this);
-    }
+        // Since we are using GcmNetworkScheduler for scheduling jobs, we need to check for the
+        // existence of Google Play Services.
+        //
+        // GcmNetworkScheduler provides backwards compatibility. However, if you are running API 21
+        // (Lollipop) or later, you may instead use JobScheduler directly -- which does not require
+        // Play Services.
+        GoogleApiAvailability gaa = GoogleApiAvailability.getInstance();
+        int resultCode = gaa.isGooglePlayServicesAvailable(this);
+        if (resultCode == ConnectionResult.SUCCESS) {
+            // Schedule background sync via our GcmTaskService. This will also register these jobs
+            // so that they persist across restarts.
+            SunshineJobScheduler.ScheduleTasks(this);
 
+            // Since we are running interactively, trigger an immediate sync as well. If this fails,
+            // we'll still have cached data from our GcmTaskService.
+            //
+            // Note: We can't invoke SunshineSyncEngine directly, since we're running inside the
+            // main thread. The SyncImmediately() method spawns a background service to perform
+            // the network request.
+            SunshineSyncService.SyncImmediately(this);
+        } else if (gaa.isUserResolvableError(resultCode)) {
+            Log.e(TAG, "Google Play Services is not available, background sync not scheduled");
+            gaa.showErrorDialogFragment(this, resultCode, 0);
+        } else {
+            Log.e(TAG, "Google Play Services is not available, background sync not scheduled");
+        }
+    }
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
