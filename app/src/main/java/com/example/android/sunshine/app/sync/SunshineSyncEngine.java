@@ -1,5 +1,6 @@
 package com.example.android.sunshine.app.sync;
 
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.ContentUris;
@@ -13,6 +14,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.preference.PreferenceManager;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.text.format.Time;
@@ -34,7 +37,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Vector;
+
+import static android.text.format.DateFormat.getDateFormat;
+import static android.text.format.DateFormat.getLongDateFormat;
 
 /**
  * Logic used for performing a network sync.
@@ -43,6 +52,7 @@ import java.util.Vector;
  * {@link SunshineSyncService}.
  */
 class SunshineSyncEngine {
+    private static final int MILLISECOND_IN_A_DAY = 1000 * 60 * 60 * 24;
     public final String LOG_TAG = SunshineSyncEngine.class.getSimpleName();
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
@@ -51,7 +61,8 @@ class SunshineSyncEngine {
             WeatherContract.WeatherEntry.COLUMN_WEATHER_ID,
             WeatherContract.WeatherEntry.COLUMN_MAX_TEMP,
             WeatherContract.WeatherEntry.COLUMN_MIN_TEMP,
-            WeatherContract.WeatherEntry.COLUMN_SHORT_DESC
+            WeatherContract.WeatherEntry.COLUMN_SHORT_DESC,
+            WeatherContract.WeatherEntry.COLUMN_DATE
     };
 
     // these indices must match the projection
@@ -59,6 +70,7 @@ class SunshineSyncEngine {
     private static final int INDEX_MAX_TEMP = 1;
     private static final int INDEX_MIN_TEMP = 2;
     private static final int INDEX_SHORT_DESC = 3;
+    private static final int INDEX_DATE = 4;
     private final Context mContext;
 
     public SunshineSyncEngine(Context context) {
@@ -79,7 +91,7 @@ class SunshineSyncEngine {
         BufferedReader reader = null;
 
         // Will contain the raw JSON response as a string.
-        String forecastJsonStr = null;
+        String forecastJsonStr;
 
         String format = "json";
         String units = "metric";
@@ -87,7 +99,7 @@ class SunshineSyncEngine {
 
         try {
             // Construct the URL for the OpenWeatherMap query
-            // Possible parameters are avaiable at OWM's forecast API page, at
+            // Possible parameters are available at OWM's forecast API page, at
             // http://openweathermap.org/API#forecast
             final String FORECAST_BASE_URL =
                     "http://api.openweathermap.org/data/2.5/forecast/daily?";
@@ -95,14 +107,14 @@ class SunshineSyncEngine {
             final String FORMAT_PARAM = "mode";
             final String UNITS_PARAM = "units";
             final String DAYS_PARAM = "cnt";
-            final String APPID_PARAM = "APPID";
+            final String APP_ID_PARAM = "APPID";
 
             Uri builtUri = Uri.parse(FORECAST_BASE_URL).buildUpon()
                     .appendQueryParameter(QUERY_PARAM, locationQuery)
                     .appendQueryParameter(FORMAT_PARAM, format)
                     .appendQueryParameter(UNITS_PARAM, units)
                     .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
-                    .appendQueryParameter(APPID_PARAM, BuildConfig.OPEN_WEATHER_MAP_API_KEY)
+                    .appendQueryParameter(APP_ID_PARAM, BuildConfig.OPEN_WEATHER_MAP_API_KEY)
                     .build();
 
             URL url = new URL(builtUri.toString());
@@ -114,7 +126,7 @@ class SunshineSyncEngine {
 
             // Read the input stream into a String
             InputStream inputStream = urlConnection.getInputStream();
-            StringBuffer buffer = new StringBuffer();
+            StringBuilder buffer = new StringBuilder();
             if (inputStream == null) {
                 // Nothing to do.
                 return;
@@ -126,7 +138,7 @@ class SunshineSyncEngine {
                 // Since it's JSON, adding a newline isn't necessary (it won't affect parsing)
                 // But it does make debugging a *lot* easier if you print out the completed
                 // buffer for debugging.
-                buffer.append(line + "\n");
+                buffer.append(line).append("\n");
             }
 
             if (buffer.length() == 0) {
@@ -292,7 +304,8 @@ class SunshineSyncEngine {
             if ( cVVector.size() > 0 ) {
                 ContentValues[] cvArray = new ContentValues[cVVector.size()];
                 cVVector.toArray(cvArray);
-                getContext().getContentResolver().bulkInsert(WeatherContract.WeatherEntry.CONTENT_URI, cvArray);
+                getContext().getContentResolver().bulkInsert(
+                        WeatherContract.WeatherEntry.CONTENT_URI, cvArray);
 
                 // delete old data so we don't build up an endless history
                 getContext().getContentResolver().delete(WeatherContract.WeatherEntry.CONTENT_URI,
@@ -323,73 +336,119 @@ class SunshineSyncEngine {
             String lastNotificationKey = context.getString(R.string.pref_last_notification);
             long lastSync = prefs.getLong(lastNotificationKey, 0);
 
-            if (System.currentTimeMillis() - lastSync >= DAY_IN_MILLIS) {
+            // TODO: Disabled for Codelab Notification Step.
+            // Commenting of this code ensures notifications are always re-displayed, a bad
+            // practice that will annoy users and often result in them suppressing your
+            // notifications.
+            // if (System.currentTimeMillis() - lastSync >= DAY_IN_MILLIS) {
                 // Last sync was more than 1 day ago, let's send a notification with the weather.
                 String locationQuery = Utility.getPreferredLocation(context);
 
-                Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationQuery, System.currentTimeMillis());
+                Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithStartDate(
+                        locationQuery, System.currentTimeMillis());
 
-                // we'll query our contentProvider, as always
-                Cursor cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
+                // Query the contentProvider for weather forecast information.
+                Cursor cursor = context.getContentResolver().query(weatherUri,
+                        NOTIFY_WEATHER_PROJECTION, null, null,
+                        WeatherContract.WeatherEntry.COLUMN_DATE);
 
-                if (cursor.moveToFirst()) {
-                    int weatherId = cursor.getInt(INDEX_WEATHER_ID);
-                    double high = cursor.getDouble(INDEX_MAX_TEMP);
-                    double low = cursor.getDouble(INDEX_MIN_TEMP);
-                    String desc = cursor.getString(INDEX_SHORT_DESC);
+                DateFormat userPreferredDateFormat = getLongDateFormat(context);
 
-                    int iconId = Utility.getIconResourceForWeatherCondition(weatherId);
-                    Resources resources = context.getResources();
-                    Bitmap largeIcon = BitmapFactory.decodeResource(resources,
-                            Utility.getArtResourceForWeatherCondition(weatherId));
-                    String title = context.getString(R.string.app_name);
+                try {
 
-                    // Define the text of the forecast.
-                    String contentText = String.format(context.getString(R.string.format_notification),
-                            desc,
-                            Utility.formatTemperature(context, high),
-                            Utility.formatTemperature(context, low));
-
-                    // NotificationCompatBuilder is a very convenient way to build backward-compatible
-                    // notifications.  Just throw in some data.
-                    NotificationCompat.Builder mBuilder =
-                            new NotificationCompat.Builder(getContext())
-                                    .setColor(resources.getColor(R.color.sunshine_light_blue))
-                                    .setSmallIcon(iconId)
-                                    .setLargeIcon(largeIcon)
-                                    .setContentTitle(title)
-                                    .setContentText(contentText);
-
-                    // Make something interesting happen when the user clicks on the notification.
-                    // In this case, opening the app is sufficient.
-                    Intent resultIntent = new Intent(context, MainActivity.class);
-
-                    // The stack builder object will contain an artificial back stack for the
-                    // started Activity.
-                    // This ensures that navigating backward from the Activity leads out of
-                    // your application to the Home screen.
-                    TaskStackBuilder stackBuilder = TaskStackBuilder.create(context);
-                    stackBuilder.addNextIntent(resultIntent);
-                    PendingIntent resultPendingIntent =
-                            stackBuilder.getPendingIntent(
-                                    0,
-                                    PendingIntent.FLAG_UPDATE_CURRENT
-                            );
-                    mBuilder.setContentIntent(resultPendingIntent);
-
+                    int numNotifications = 0;
                     NotificationManager mNotificationManager =
-                            (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-                    // WEATHER_NOTIFICATION_ID allows you to update the notification later on.
-                    mNotificationManager.notify(WEATHER_NOTIFICATION_ID, mBuilder.build());
+                            (NotificationManager) getContext().getSystemService(
+                                    Context.NOTIFICATION_SERVICE);
+                    while (cursor != null && cursor.moveToNext()) {
+                        numNotifications++;
+                        int weatherId = cursor.getInt(INDEX_WEATHER_ID);
+                        double high = cursor.getDouble(INDEX_MAX_TEMP);
+                        double low = cursor.getDouble(INDEX_MIN_TEMP);
+                        String desc = cursor.getString(INDEX_SHORT_DESC);
+                        String date = cursor.getString(INDEX_DATE);
 
-                    //refreshing last sync
-                    SharedPreferences.Editor editor = prefs.edit();
-                    editor.putLong(lastNotificationKey, System.currentTimeMillis());
-                    editor.commit();
+                        // Generate an ID to uniquely identify the notifications.
+                        int daysSinceEpoch = (int)(Long.parseLong(date) / MILLISECOND_IN_A_DAY);
+
+                        // Generate a date from epoch time.
+                        Date forecastDate = new Date(Long.parseLong(date));
+                        String dateString = userPreferredDateFormat.format(forecastDate);
+
+                        // Define the text of the forecast.
+                        String contentText = String.format(context.getString(
+                                R.string.format_notification),
+                                desc,
+                                Utility.formatTemperature(context, high),
+                                Utility.formatTemperature(context, low));
+
+                        String titleText = context.getString(R.string.app_name);
+
+                        // Create notification.
+                        NotificationCompat.Builder builder = createNotificationBuilder(context,
+                                weatherId, titleText, contentText);
+
+                        mNotificationManager.notify(daysSinceEpoch, builder.build());
+
+                        // Refreshing last sync date.
+                        SharedPreferences.Editor editor = prefs.edit();
+                        editor.putLong(lastNotificationKey, System.currentTimeMillis());
+                        editor.apply();
+
+                        if (numNotifications == 3) {
+                            // After the third notification stop creating them.
+                            break;
+                        }
+                    }
+                } finally {
+                  if (cursor != null) try { cursor.close(); } catch (Exception ignored) { }
                 }
-                cursor.close();
-            }
+            // Disabled for Codelab Notification step. }
         }
+    }
+
+    private NotificationCompat.Builder createNotificationBuilder(@NonNull Context context,
+                                                                 @Nullable Integer weatherId,
+                                                                 @NonNull String titleText,
+                                                                 @NonNull String contentText) {
+        int iconId = R.mipmap.ic_launcher;
+        if (weatherId != null) {
+            iconId = Utility.getIconResourceForWeatherCondition(weatherId);
+        }
+        Resources resources = context.getResources();
+
+        // Normally when loading resources you should utilize a library like Glide, since this is a
+        // sample we keep it simple.
+        Bitmap largeIcon = BitmapFactory.decodeResource(resources,
+                Utility.getArtResourceForWeatherCondition(iconId));
+
+        // NotificationCompatBuilder is a very convenient way to build
+        // backward-compatible notifications; just input data.
+        NotificationCompat.Builder mBuilder =
+                new NotificationCompat.Builder(getContext())
+                        .setColor(resources.getColor(R.color.sunshine_light_blue))
+                        .setSmallIcon(iconId)
+                        .setLargeIcon(largeIcon)
+                        .setContentTitle(titleText)
+                        .setContentText(contentText);
+
+        // Make something interesting happen when the user clicks on the
+        // notification. In this case, opening the app is sufficient.
+        Intent resultIntent = new Intent(context, MainActivity.class);
+
+        // The stack builder object will contain an artificial back stack for the
+        // started Activity. This ensures that navigating backward from the
+        // Activity leads out of your application to the Home screen.
+        TaskStackBuilder stackBuilder = TaskStackBuilder.create(context);
+        stackBuilder.addNextIntent(resultIntent);
+        PendingIntent resultPendingIntent =
+                stackBuilder.getPendingIntent(
+                        0,
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                );
+        mBuilder.setContentIntent(resultPendingIntent);
+
+        return mBuilder;
     }
 
     /**
@@ -412,7 +471,7 @@ class SunshineSyncEngine {
                 new String[]{locationSetting},
                 null);
 
-        if (locationCursor.moveToFirst()) {
+        if (locationCursor != null && locationCursor.moveToFirst()) {
             int locationIdIndex = locationCursor.getColumnIndex(WeatherContract.LocationEntry._ID);
             locationId = locationCursor.getLong(locationIdIndex);
         } else {
@@ -423,7 +482,8 @@ class SunshineSyncEngine {
             // Then add the data, along with the corresponding name of the data type,
             // so the content provider knows what kind of value is being inserted.
             locationValues.put(WeatherContract.LocationEntry.COLUMN_CITY_NAME, cityName);
-            locationValues.put(WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING, locationSetting);
+            locationValues.put(WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING,
+                    locationSetting);
             locationValues.put(WeatherContract.LocationEntry.COLUMN_COORD_LAT, lat);
             locationValues.put(WeatherContract.LocationEntry.COLUMN_COORD_LONG, lon);
 
