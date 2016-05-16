@@ -25,6 +25,7 @@ import com.example.android.sunshine.app.BuildConfig;
 import com.example.android.sunshine.app.MainActivity;
 import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
+import com.example.android.sunshine.app.data.Forecast;
 import com.example.android.sunshine.app.data.WeatherContract;
 
 import org.json.JSONArray;
@@ -51,8 +52,7 @@ import static android.text.format.DateFormat.getLongDateFormat;
  * This class should not be invoked directly. Instead, a background process should be invoked via
  * {@link SunshineSyncService}.
  */
-class SunshineSyncEngine {
-    private static final int MILLISECOND_IN_A_DAY = 1000 * 60 * 60 * 24;
+public class SunshineSyncEngine {
     public final String LOG_TAG = SunshineSyncEngine.class.getSimpleName();
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
@@ -362,33 +362,17 @@ class SunshineSyncEngine {
                                     Context.NOTIFICATION_SERVICE);
                     while (cursor != null && cursor.moveToNext()) {
                         numNotifications++;
-                        int weatherId = cursor.getInt(INDEX_WEATHER_ID);
-                        double high = cursor.getDouble(INDEX_MAX_TEMP);
-                        double low = cursor.getDouble(INDEX_MIN_TEMP);
-                        String desc = cursor.getString(INDEX_SHORT_DESC);
-                        String date = cursor.getString(INDEX_DATE);
-
-                        // Generate an ID to uniquely identify the notifications.
-                        int daysSinceEpoch = (int)(Long.parseLong(date) / MILLISECOND_IN_A_DAY);
+                        Forecast forecast = Forecast.fromCursorRow(context, cursor);
 
                         // Generate a date from epoch time.
-                        Date forecastDate = new Date(Long.parseLong(date));
+                        Date forecastDate = new Date(forecast.mMillisecondsSincEpoch);
                         String dateString = userPreferredDateFormat.format(forecastDate);
 
-                        // Define the text of the forecast.
-                        String contentText = String.format(context.getString(
-                                R.string.format_notification),
-                                desc,
-                                Utility.formatTemperature(context, high),
-                                Utility.formatTemperature(context, low));
-
-                        String titleText = context.getString(R.string.app_name);
-
                         // Create notification.
-                        NotificationCompat.Builder builder = createNotificationBuilder(context,
-                                weatherId, titleText, contentText);
+                        NotificationCompat.Builder builder = createForecastNotificationBuilder(
+                                context, forecast);
 
-                        mNotificationManager.notify(daysSinceEpoch, builder.build());
+                        mNotificationManager.notify(forecast.mDaysSinceEpoch, builder.build());
 
                         // Refreshing last sync date.
                         SharedPreferences.Editor editor = prefs.edit();
@@ -407,14 +391,10 @@ class SunshineSyncEngine {
         }
     }
 
-    private NotificationCompat.Builder createNotificationBuilder(@NonNull Context context,
-                                                                 @Nullable Integer weatherId,
-                                                                 @NonNull String titleText,
-                                                                 @NonNull String contentText) {
+    private static NotificationCompat.Builder createSummaryNotificationBuilder(
+            @NonNull Context context, @NonNull String notificationContentText,
+            @NonNull String notificationTitle) {
         int iconId = R.mipmap.ic_launcher;
-        if (weatherId != null) {
-            iconId = Utility.getIconResourceForWeatherCondition(weatherId);
-        }
         Resources resources = context.getResources();
 
         // Normally when loading resources you should utilize a library like Glide, since this is a
@@ -424,13 +404,13 @@ class SunshineSyncEngine {
 
         // NotificationCompatBuilder is a very convenient way to build
         // backward-compatible notifications; just input data.
-        NotificationCompat.Builder mBuilder =
-                new NotificationCompat.Builder(getContext())
+        NotificationCompat.Builder builder =
+                new NotificationCompat.Builder(context)
                         .setColor(resources.getColor(R.color.sunshine_light_blue))
                         .setSmallIcon(iconId)
                         .setLargeIcon(largeIcon)
-                        .setContentTitle(titleText)
-                        .setContentText(contentText);
+                        .setContentTitle(notificationContentText)
+                        .setContentText(notificationTitle);
 
         // Make something interesting happen when the user clicks on the
         // notification. In this case, opening the app is sufficient.
@@ -446,9 +426,51 @@ class SunshineSyncEngine {
                         0,
                         PendingIntent.FLAG_UPDATE_CURRENT
                 );
-        mBuilder.setContentIntent(resultPendingIntent);
+        builder.setContentIntent(resultPendingIntent);
 
-        return mBuilder;
+        return builder;
+    }
+
+    public static NotificationCompat.Builder createForecastNotificationBuilder(
+            @NonNull Context context, @NonNull Forecast forecast) {
+        int iconId = R.mipmap.ic_launcher;
+        if (forecast.mWeatherId > 0) {
+            iconId = Utility.getIconResourceForWeatherCondition(forecast.mWeatherId);
+        }
+        Resources resources = context.getResources();
+
+        // Normally when loading resources you should utilize a library like Glide, since this is a
+        // sample we keep it simple.
+        Bitmap largeIcon = BitmapFactory.decodeResource(resources,
+                Utility.getArtResourceForWeatherCondition(iconId));
+
+        // NotificationCompatBuilder is a very convenient way to build
+        // backward-compatible notifications; just input data.
+        NotificationCompat.Builder builder =
+                new NotificationCompat.Builder(context)
+                        .setColor(resources.getColor(R.color.sunshine_light_blue))
+                        .setSmallIcon(iconId)
+                        .setLargeIcon(largeIcon)
+                        .setContentTitle(forecast.mNotificationTitle)
+                        .setContentText(forecast.mNotificationContentText);
+
+        // Make something interesting happen when the user clicks on the
+        // notification. In this case, opening the app is sufficient.
+        Intent resultIntent = new Intent(context, MainActivity.class);
+
+        // The stack builder object will contain an artificial back stack for the
+        // started Activity. This ensures that navigating backward from the
+        // Activity leads out of your application to the Home screen.
+        TaskStackBuilder stackBuilder = TaskStackBuilder.create(context);
+        stackBuilder.addNextIntent(resultIntent);
+        PendingIntent resultPendingIntent =
+                stackBuilder.getPendingIntent(
+                        0,
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                );
+        builder.setContentIntent(resultPendingIntent);
+
+        return builder;
     }
 
     /**
