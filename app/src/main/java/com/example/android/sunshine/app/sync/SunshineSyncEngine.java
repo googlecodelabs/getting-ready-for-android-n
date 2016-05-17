@@ -17,6 +17,7 @@ import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.RemoteInput;
 import android.support.v4.app.TaskStackBuilder;
 import android.text.format.Time;
 import android.util.Log;
@@ -26,6 +27,7 @@ import com.example.android.sunshine.app.MainActivity;
 import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
 import com.example.android.sunshine.app.data.Forecast;
+import com.example.android.sunshine.app.data.MessageReplyReceiver;
 import com.example.android.sunshine.app.data.WeatherContract;
 
 import org.json.JSONArray;
@@ -56,6 +58,7 @@ public class SunshineSyncEngine {
     public final String LOG_TAG = SunshineSyncEngine.class.getSimpleName();
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
+    private static final String FORECAST_NOTIFICATION_GROUP = "FORECAST_NOTIFICATION_GROUP";
 
     private static final String[] NOTIFY_WEATHER_PROJECTION = new String[] {
             WeatherContract.WeatherEntry.COLUMN_WEATHER_ID,
@@ -384,6 +387,16 @@ public class SunshineSyncEngine {
                             break;
                         }
                     }
+                    if (numNotifications > 0) {
+                        // Always build a summary if you have notifications in a group.
+                        // The summary will be displayed by the system when needed.
+                        NotificationCompat.Builder summaryBuilder =
+                                createSummaryNotificationBuilder(context,
+                                        "Sunshine Forecasts", "");
+                        summaryBuilder.setGroupSummary(true);
+                        mNotificationManager.notify(WEATHER_NOTIFICATION_ID,
+                                summaryBuilder.build());
+                    }
                 } finally {
                   if (cursor != null) try { cursor.close(); } catch (Exception ignored) { }
                 }
@@ -410,7 +423,8 @@ public class SunshineSyncEngine {
                         .setSmallIcon(iconId)
                         .setLargeIcon(largeIcon)
                         .setContentTitle(notificationContentText)
-                        .setContentText(notificationTitle);
+                        .setContentText(notificationTitle)
+                        .setGroup(FORECAST_NOTIFICATION_GROUP);
 
         // Make something interesting happen when the user clicks on the
         // notification. In this case, opening the app is sufficient.
@@ -452,7 +466,26 @@ public class SunshineSyncEngine {
                         .setSmallIcon(iconId)
                         .setLargeIcon(largeIcon)
                         .setContentTitle(forecast.mNotificationTitle)
-                        .setContentText(forecast.mNotificationContentText);
+                        .setContentText(forecast.mNotificationContentText)
+                        .setGroup(FORECAST_NOTIFICATION_GROUP);
+
+        RemoteInput remoteInput = new RemoteInput.Builder(
+                MessageReplyReceiver.EXTRA_REMOTE_REPLY)
+                .setLabel("Take note")
+                .build();
+        PendingIntent replyIntent = PendingIntent.getBroadcast(context,
+                // This field should be unique per notification.
+                forecast.mDaysSinceEpoch,
+                MessageReplyReceiver.getMessageReplyIntent(forecast),
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        NotificationCompat.Action actionReplyByRemoteInput =
+                new NotificationCompat.Action.Builder(
+                        R.mipmap.ic_launcher,
+                        "Take note",
+                        replyIntent)
+                        .addRemoteInput(remoteInput)
+                        .build();
+        builder.addAction(actionReplyByRemoteInput);
 
         // Make something interesting happen when the user clicks on the
         // notification. In this case, opening the app is sufficient.
