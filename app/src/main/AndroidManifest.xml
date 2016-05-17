@@ -67,10 +67,28 @@
             android:name=".sync.SunshineJobScheduler"
             android:exported="true"
             android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE">
+        </service>
+
+        <!-- Broadcast receiver for background sync alarms -->
+        <receiver
+            android:name=".sync.SunshineSyncService$SyncAlarmReceiver" >
+        </receiver>
+
+        <receiver
+            android:name="com.example.android.sunshine.app.data.MessageReplyReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.android.sunshine.app.ACTION_MESSAGE_REPLY"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Broadcast receiver for BOOT_COMPLETED event, to schedule alarms -->
+        <receiver android:name=".sync.SunshineSyncService$BootBroadcastReceiver">
             <intent-filter>
                 <action android:name="com.google.android.gms.gcm.ACTION_TASK_READY" />
             </intent-filter>
-        </service>
+        </receiver>
+
 
     </application>
 
