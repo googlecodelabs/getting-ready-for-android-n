@@ -1,6 +1,5 @@
 package com.example.android.sunshine.app.sync;
 
-import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.ContentUris;
@@ -13,13 +12,15 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.text.format.Time;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.example.android.sunshine.app.BuildConfig;
 import com.example.android.sunshine.app.MainActivity;
@@ -33,17 +34,16 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Vector;
 
-import static android.text.format.DateFormat.getDateFormat;
 import static android.text.format.DateFormat.getLongDateFormat;
 
 /**
@@ -53,6 +53,7 @@ import static android.text.format.DateFormat.getLongDateFormat;
  * {@link SunshineSyncService}.
  */
 public class SunshineSyncEngine {
+    private static final String TAG = "SunshineSyncEngine";
     public final String LOG_TAG = SunshineSyncEngine.class.getSimpleName();
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
@@ -147,6 +148,20 @@ public class SunshineSyncEngine {
             }
             forecastJsonStr = buffer.toString();
             getWeatherDataFromJson(forecastJsonStr, locationQuery);
+        } catch (FileNotFoundException e) {
+            // Unable to download weather data.
+            final String errorMsg = "Unable to download weather. Check to ensure you've entered " +
+                    "an API key in app/build.gradle.";
+            Log.wtf(TAG, errorMsg);
+            // Display toast. This service does not have access to interact with users, so we must
+            // force this message onto the UI thread.
+            Handler h = new Handler(Looper.getMainLooper());
+            h.post(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(getContext(), errorMsg, Toast.LENGTH_LONG).show();
+                }
+            });
         } catch (IOException e) {
             Log.e(LOG_TAG, "Error ", e);
             // If the code didn't successfully get the weather data, there's no point in attempting
